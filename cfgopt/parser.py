@@ -1,3 +1,4 @@
+from copy import deepcopy
 from ctypes import Union
 from functools import partial
 import importlib
@@ -94,6 +95,9 @@ class CfgOptParseResult:
     
     def __getattr__(self, attrname):
         return getattr(self.data, attrname)
+    
+    def __call__(self, *args: Any, **kwds: Any) -> Any:
+        return self["__class__"](*args, **kwds)
 
 
 def parse_configs(cfg_root:str) -> CfgOptParseResult:
@@ -120,7 +124,7 @@ def parse_configs(cfg_root:str) -> CfgOptParseResult:
     router = CfgOptParseResult(root)
 
     # use command line options to update json configs
-    updator_pattern = re.compile("^--(.*)=(.*)")
+    updator_pattern = re.compile("^--(.*\.json.*)=(.*)")
     for updator in sys.argv:
         match_obj = updator_pattern.fullmatch(updator)
         if match_obj:
@@ -154,7 +158,7 @@ def parse_configs(cfg_root:str) -> CfgOptParseResult:
     def parse_inheritance(data):
         if isinstance(data, dict):
             if "__base__" in data:
-                base:Dict = parse_inheritance(data["__base__"])
+                base:Dict = deepcopy(parse_inheritance(data["__base__"]))
                 data.pop("__base__")
                 base.update(data)
                 data.update(base)

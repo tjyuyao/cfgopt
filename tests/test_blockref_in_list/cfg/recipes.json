@@ -1,0 +1,13 @@
+{
+    "recipe1": {
+        "use_data": [
+            "cfg://data.json/data1"
+        ]
+    },
+    "recipe2": {
+        "use_data": [
+            "cfg://data.json/data1",
+            "cfg://data.json/data2"
+        ]
+    }
+}

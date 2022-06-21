@@ -1,0 +1,12 @@
+{
+    "data1": {
+        "meta": {
+            "location": "/data/1/loc"
+        }
+    },
+    "data2": {
+        "meta": {
+            "location": "/data/2/loc"
+        }
+    }
+}
