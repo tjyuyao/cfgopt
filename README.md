@@ -9,25 +9,40 @@
 
 - **2022/06/21** `cfgopt` code released.
 
-## Feature
+## Getting Started
 
-### basic json binding
+**Installation**
+
+```
+pip install cfgopt
+```
+
+**Basic Usage**
+
+Generally, you should have some json **c**on**f**i**g** files in a folder, and a python program that import `cfgopt` to parse them. The program can have command line **opt**ions that update specific field in the parsed results for this running. This is also why this library is called "cfgopt".
+
+To be concrete, you have two choices using `cfgopt`:
+
+- Use the `cfgopt.parse_configs(cfg_root)` API, just pass in the directory path of all the configuration files, and explore with the results! Or you should read the examples described in the [Features](https://github.com/tjyuyao/cfgopt#features) section.
+- Use `cfgoptrun` command directly or wrap `cfgopt.main()` function, for details please refer to the [main function](https://github.com/tjyuyao/cfgopt#main-function) section.
+
+## Features
+
+<details><summary><h3>basic json binding</h3></summary><p>
 
 `cfgopt` has a main api `parse_configs(cfg_root)` that accepts the path of *a folder of json files*. All files will be (recursively) load in python and added to a root `dict`, keeping the hierarchy and data types unchanged, with some exceptions described in follow-up sections.
 
 > Feature first added in `v0.1`.
 
----
+</p></details>
 
-### block-level reference
+<details><summary><h3>block-level reference</h3></summary><p>
 
 `cfgopt` release you from repeating yourself with a mountain pile of configuration files by borrowing the concept of `block-level reference and embedding` in many modern note-taking apps such as `Logseq`, or more well-known `hyperlinks` for webpages.
 
-`cfgopt` follows and expand string values matching a special syntax `cfg://<file-path>/<intra-file-uri>` in the configuration files during parsing. This is one of the most repealing feature for `cfgopt`. 
+`cfgopt` follows and expands string values matching a special syntax `cfg://<file-path>/<intra-file-uri>` in the configuration files during parsing. This is one of the most repealing feature for `cfgopt`. 
 
-<details><summary>A Quick Example</summary>
-<p>
-
+**Example**:
 
 **file structure**
 
@@ -88,15 +103,11 @@ def test_blockref_in_list():
     assert cfg["recipes.json/recipe2/use_data/1/meta/location"] == "/data/2/loc"
 ```
 
-</p>
-</details>
-
-
 > Feature first added in `v0.1`.
 
----
+</p></details>
 
-### command-line update
+<details><summary><h3>command-line update</h3></summary><p>
 
 `cfgopt` will automatically parse command line options matching the python regex format `^--(.*\.json.*)=(.*)`, and interpret it as an update of the parsed configuration folder. The right hand side of `=` should be valid json, and you might need to take care of shell escaping your special characters.
 
@@ -107,20 +118,21 @@ But if you write `--train.json/resume=\"/path/to/ckpt\"` or `--train.json/resume
 > Updated regex format from `^--(.*)=(.*)` to `^--(.*\.json.*)=(.*)` in `v0.2`.
 > Feature first added in `v0.1`.
 
----
+</p></details>
 
-### json objects inheritance
+<details><summary><h3>json objects inheritance</h3></summary><p>
 
 Users can specify a json dict, that contains a `__base__` field, linking to another base json dict objects with the `cfg://` reference format. Then the current dict would inherit the base object, and also has its own values in normal fields. This feature is also critical to eliminate repeating, with which now you can develop multiple configs from prototypes.
 
 > TODO: an example.
 
 > Bugfix: changed from referencing to deepcopying the base dict in `v0.2`.
+
 > Feature first added in `v0.1`.
 
----
+</p></details>
 
-### parse *any* python objects
+<details><summary><h3>parse python objects</h3></summary><p>
 
 `cfgopt` has a extremly flexible feature, that parse an json dict to almost ANY python objects defined in user's code or any code python can find in `PYTHON_PATH`.
 
@@ -137,11 +149,12 @@ if "__module__" in data and "__class__" in data and isinstance(data["__class__"]
 > TODO: an example.
 
 > API enhance: user now can directly call the mapped "dict" object instead of its `__class__` field in `v0.2`.
+
 > Feature first added in `v0.1`.
 
----
+</p></details>
 
-### Example main function
+<details><summary><h3>main function</h3></summary><p>
 
 ```python
 import argparse
@@ -172,4 +185,7 @@ This example `main()` function accepts the first argument as a previous describe
 > TODO: an example.
 
 > Add `cfgoptrun` command (entrypoint) in `v0.2`.
+
 > Feature first added in `v0.1`.
+
+</p></details>
