@@ -12,6 +12,11 @@ _CFGOPT_PROTOCOL = "cfg://"
 _NPRO = len(_CFGOPT_PROTOCOL)
 _SEP_TOKEN = "/"
 
+def _remove_protocol_prefix(uri):
+    if uri.startswith(_CFGOPT_PROTOCOL):
+        uri = uri[_NPRO:]
+    return uri
+
 class CfgOptParseError(Exception): ...
 
 class CfgOptParseResult:
@@ -28,12 +33,8 @@ class CfgOptParseResult:
         try:
             for key in keys:
                 item = self._get_item_from_list_or_dict(item, key)
-            key_error = None
-        except KeyError as e:
-            key_error = str(e)
-        finally:
-            if key_error is not None:
-                raise CfgOptParseError(f"While parsing {uri}, Key {key_error} does not exist.")
+        except:
+            raise CfgOptParseError(f"While parsing '{uri}', Key '{key}' does not exist.") from None
 
         if isinstance(item, (dict, list)):
             return CfgOptParseResult(item)
@@ -56,8 +57,6 @@ class CfgOptParseResult:
         if isinstance(item, list):
             return item[int(key)]
         elif isinstance(item, dict):
-            if key not in item:
-                item[key] = {}
             return item[key]
         else:
             raise TypeError(f"Expect a list or dict, got {type(item)}.")
@@ -67,8 +66,7 @@ class CfgOptParseResult:
         if isinstance(uri, int):
             return [uri]
         # remove optional 'cfg://' prefix
-        if uri.startswith(_CFGOPT_PROTOCOL):
-            uri = uri[_NPRO:]
+        uri = _remove_protocol_prefix(uri)
         # eliminate ".." in dict hiearchy keys
         def eliminate_parent(_keys):
             out = []
@@ -95,8 +93,34 @@ class CfgOptParseResult:
     def __getattr__(self, attrname):
         return getattr(self.data, attrname)
     
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
-        return self["__class__"](*args, **kwds)
+    def __call__(self, *args: Any, recursive=True, **kwds: Any) -> Any:
+        
+        def wrap(data): return CfgOptParseResult(data) if isinstance(data, dict) else data
+
+        def instantiate(data, *_args, **_kwds):
+            if "__module__" in data and "__class__" in data and isinstance(data["__class__"], str):
+                module = importlib.import_module(data["__module__"])
+                klass = getattr(module, data["__class__"])
+                return klass(*_args, **_kwds, **{k:wrap(v) for k, v in data.items() if not k.startswith("__")})
+            else: # fallback to direct call
+                return data(*_args, **_kwds)
+            
+        if recursive:
+            def recursive_instantiate(data, root):
+                if isinstance(data, dict):
+                    for k in data:
+                        if k.startswith("__"): continue
+                        data[k] = recursive_instantiate(data[k], False)
+                    if not root and "__class__" in data:
+                        data = instantiate(data)
+                elif isinstance(data, list):
+                    data = [recursive_instantiate(d, False) for d in data]
+                return data
+            data = recursive_instantiate(deepcopy(self.data), root=True)
+        else:
+            data = self.data
+
+        return instantiate(data, *args, **kwds)
 
 
 def parse_configs(cfg_root:str) -> CfgOptParseResult:
@@ -112,12 +136,8 @@ def parse_configs(cfg_root:str) -> CfgOptParseResult:
         with open(cfg_file) as _f:
             try:
                 cfg_data = json.load(_f)
-                json_error = None
             except json.JSONDecodeError as e:
-                json_error = str(e)
-            finally:
-                if json_error:
-                    raise CfgOptParseError(f"While parsing {cfg_file}, {json_error}.")
+                raise CfgOptParseError(f"While parsing {cfg_file}, {e}.") from None
         root[cfg_addr] = cfg_data
 
     router = CfgOptParseResult(root)
@@ -147,13 +167,16 @@ def parse_configs(cfg_root:str) -> CfgOptParseResult:
             data = [parse_json_block_reference(d, f"{uri}/{i}") for i, d in enumerate(data)]
         elif isinstance(data, str) and data.startswith(_CFGOPT_PROTOCOL):
             if ".json" not in data:  # will be interpret as a relative uri
-                data = f"{uri}/{data}"
+                data = f"{uri[:uri.rfind(_SEP_TOKEN)]}/{_remove_protocol_prefix(data)}"
             data = router[data]
             if isinstance(data, CfgOptParseResult):
                 data = data.data
         return data
     
-    parse_json_block_reference(root, _CFGOPT_PROTOCOL)
+    try:
+        parse_json_block_reference(root, _CFGOPT_PROTOCOL[:-1])
+    except CfgOptParseError as e:
+        raise CfgOptParseError(str(e)) from None
 
     # parse inheritance (2 tasks)
     
@@ -181,25 +204,9 @@ def parse_configs(cfg_root:str) -> CfgOptParseResult:
                 if "/" not in k: continue
                 CfgOptParseResult(data)[k] = update_with_nested_uri_key(data.pop(k))
         elif isinstance(data, list):
-            data = [parse_python_objects(_) for _ in data]
+            data = [update_with_nested_uri_key(_) for _ in data]
         return data
     
     update_with_nested_uri_key(root)
-
-    # parse python objects
-    def parse_python_objects(data):
-        if isinstance(data, dict):
-            for k in data:
-                if k.startswith("__"): continue
-                data[k] = parse_python_objects(data[k])
-            if "__module__" in data and "__class__" in data and isinstance(data["__class__"], str):
-                module = importlib.import_module(data["__module__"])
-                klass = getattr(module, data["__class__"])
-                data["__class__"] = partial(klass, **{k:v for k, v in data.items() if not k.startswith("__")})
-        elif isinstance(data, list):
-            data = [parse_python_objects(_) for _ in data]
-        return data
-    
-    parse_python_objects(root)
 
     return router

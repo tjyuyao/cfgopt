@@ -151,6 +151,8 @@ if "__module__" in data and "__class__" in data and isinstance(data["__class__"]
 
 > TODO: an example.
 
+> Supported auto instantiate of nested python objects since `v0.4.0`.
+
 > API enhance: user now can directly call the mapped "dict" object instead of its `__class__` field in `v0.2`.
 
 > Feature first added in `v0.1`.
@@ -163,7 +165,7 @@ if "__module__" in data and "__class__" in data and isinstance(data["__class__"]
 import argparse
 import cfgopt
 
-def main(*args, **kwds):
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "recipe",
@@ -172,12 +174,12 @@ def main(*args, **kwds):
     parser.add_argument(
         "-d", "--cfgdir",
         default="cfg",
-        help="config directory that maps to cfg:// root."
+        help="config directory that maps to cfg:// root. (default: `cfg`)"
     )
     args, _ = parser.parse_known_args()
-    cfgs = cfgopt.parse_configs(cfg_root=args.cfgdir)
-    return cfgs[args.recipe](*args, **kwds)
-
+    cfgs = parse_configs(cfg_root=args.cfgdir)
+    _main = cfgs[args.recipe]
+    return _main(recursive=False)
 
 if __name__ == "__main__":
     main()
