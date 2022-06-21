@@ -1,5 +1,4 @@
 from copy import deepcopy
-from ctypes import Union
 from functools import partial
 import importlib
 import re
