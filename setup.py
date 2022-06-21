@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='cfgopt',
-      version='0.2',
+      version='0.3.0',
       description='You only configure your deep learning experiment once with cfgopt.',
       url='http://github.com/tjyuyao/cfgopt',
       author='Yuyao Huang',

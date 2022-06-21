@@ -1,11 +1,11 @@
-from copy import deepcopy
-from functools import partial
+import glob
 import importlib
+import json
+import os.path as osp
 import re
 import sys
-import json
-import glob
-import os.path as osp
+from copy import deepcopy
+from functools import partial
 from typing import Any, Dict
 
 _CFGOPT_PROTOCOL = "cfg://"
@@ -139,17 +139,21 @@ def parse_configs(cfg_root:str) -> CfgOptParseResult:
             router[uri] = data
 
     # parse block reference
-    def parse_json_block_reference(data):
+    def parse_json_block_reference(data, uri):
         if isinstance(data, dict):
             for k in data:
-                data[k] = parse_json_block_reference(data[k])
+                data[k] = parse_json_block_reference(data[k], f"{uri}/{k}")
         elif isinstance(data, list):
-            data = [parse_json_block_reference(_) for _ in data]
+            data = [parse_json_block_reference(d, f"{uri}/{i}") for i, d in enumerate(data)]
         elif isinstance(data, str) and data.startswith(_CFGOPT_PROTOCOL):
-            data = router[data].data
+            if ".json" not in data:  # will be interpret as a relative uri
+                data = f"{uri}/{data}"
+            data = router[data]
+            if isinstance(data, CfgOptParseResult):
+                data = data.data
         return data
     
-    parse_json_block_reference(root)
+    parse_json_block_reference(root, _CFGOPT_PROTOCOL)
 
     # parse inheritance (2 tasks)
     

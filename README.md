@@ -42,7 +42,7 @@ To be concrete, you have two choices using `cfgopt`:
 
 **The `cfg://` format URI:**
 
-`cfgopt` follows and expands string values matching a special syntax `cfg://<file-path>/<intra-file-uri>` in the configuration files during parsing. This is one of the most repealing feature for `cfgopt`. 
+`cfgopt` follows and expands string values matching a special syntax `cfg://<file-path>/<intra-file-uri>` in the configuration files during parsing. This is one of the most repealing feature for `cfgopt`. You can also specify *relative* uri which contains no substring ".json" in it.
 
 **Example:**
 
@@ -105,6 +105,7 @@ def test_blockref_in_list():
     assert cfg["recipes.json/recipe2/use_data/1/meta/location"] == "/data/2/loc"
 ```
 
+> Relative URI support added in `v0.3.0`.
 > Feature first added in `v0.1`.
 
 </p></details>
