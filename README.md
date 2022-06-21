@@ -24,7 +24,7 @@ Generally, you should have some json **c**on**f**i**g** files in a folder, and a
 To be concrete, you have two choices using `cfgopt`:
 
 - Use the `cfgopt.parse_configs(cfg_root)` API, just pass in the directory path of all the configuration files, and explore with the results! Or you should read the examples described in the [Features](https://github.com/tjyuyao/cfgopt#features) section.
-- Use `cfgoptrun` command directly or wrap `cfgopt.main()` function, for details please refer to the [main function](https://github.com/tjyuyao/cfgopt#main-function) section.
+- Use `cfgoptrun` command directly or wrap `cfgopt.main()` function, for details please refer to the follow-up [main function](https://github.com/tjyuyao/cfgopt#main-function) section.
 
 ## Features
 
@@ -40,9 +40,11 @@ To be concrete, you have two choices using `cfgopt`:
 
 `cfgopt` release you from repeating yourself with a mountain pile of configuration files by borrowing the concept of `block-level reference and embedding` in many modern note-taking apps such as `Logseq`, or more well-known `hyperlinks` for webpages.
 
+**The `cfg://` format URI:**
+
 `cfgopt` follows and expands string values matching a special syntax `cfg://<file-path>/<intra-file-uri>` in the configuration files during parsing. This is one of the most repealing feature for `cfgopt`. 
 
-**Example**:
+**Example:**
 
 **file structure**
 
@@ -122,7 +124,7 @@ But if you write `--train.json/resume=\"/path/to/ckpt\"` or `--train.json/resume
 
 <details><summary><h3>json objects inheritance</h3></summary><p>
 
-Users can specify a json dict, that contains a `__base__` field, linking to another base json dict objects with the `cfg://` reference format. Then the current dict would inherit the base object, and also has its own values in normal fields. This feature is also critical to eliminate repeating, with which now you can develop multiple configs from prototypes.
+Users can specify a json dict, that contains a `__base__` field, linking to another base json dict objects with the `cfg://` reference format (described in [block-level reference](https://github.com/tjyuyao/cfgopt#block-level-reference)). Then the current dict would inherit the base object, and also has its own values in normal fields. This feature is also critical to eliminate repeating, with which now you can develop multiple simillar configs from some prototypes.
 
 > TODO: an example.
 
