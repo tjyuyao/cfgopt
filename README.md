@@ -112,13 +112,16 @@ def test_blockref_in_list():
 
 <details><summary><h3>command-line update</h3></summary><p>
 
-`cfgopt` will automatically parse command line options matching the python regex format `^--(.*\.json.*)=(.*)`, and interpret it as an update of the parsed configuration folder. The right hand side of `=` should be valid json, and you might need to take care of shell escaping your special characters.
+`cfgopt` will automatically parse command line options matching the python regex format `^--(.*)=(.*)`, and interpret it as an update of the parsed configuration folder. The right hand side of `=` should be valid json, and you might need to take care of shell escaping your special characters.
 
 For example, you can write `--train.json/max_epochs=100` or `--train.json/max_epochs="100"`, since your shell would escape double-quotes, you will get an integer `100` in both cases.
 
 But if you write `--train.json/resume=\"/path/to/ckpt\"` or `--train.json/resume='"/path/to/ckpt"'`, you should probably get a string value, which depends on your shell implementation.
 
-> Updated regex format from `^--(.*)=(.*)` to `^--(.*\.json.*)=(.*)` in `v0.2`.
+> Behavior changed to update existing uri before expansion and then update thereafter, this makes both features, i.e., command-line specifying expansion and assigning values after expansion, work. Since `v0.5.0`.
+
+> Updated regex format from `^--(.*)=(.*)` to `^--(.*\.json.*)=(.*)` in `v0.2`. But then changed back since `v0.4.3`, be careful that unmatched uri/keys would just be ignored without warning.
+
 > Feature first added in `v0.1`.
 
 </p></details>
@@ -143,13 +146,14 @@ Users can specify a json dict, that contains `__module__` and `__class__` field.
 
 **pseudo-code of parsing:**
 ```python
-if "__module__" in data and "__class__" in data and isinstance(data["__class__"], str):
-    module = importlib.import_module(data["__module__"])
-    klass = getattr(module, data["__class__"])
-    data["__class__"] = partial(klass, **{k:v for k, v in data.items() if not k.startswith("__")})
+module = importlib.import_module(data["__module__"])
+klass = getattr(module, data["__class__"])
+data["__class__"] = partial(klass, **{k:v for k, v in data.items() if not k.startswith("__")})
 ```
 
 > TODO: an example.
+
+> Important Feature: `PartialClass` and lazily instantiation since `v0.5.0`.
 
 > Supported auto instantiate of nested python objects since `v0.4.0`.
 
@@ -176,8 +180,8 @@ def main():
         default="cfg",
         help="config directory that maps to cfg:// root. (default: `cfg`)"
     )
-    args, _ = parser.parse_known_args()
-    cfgs = parse_configs(cfg_root=args.cfgdir)
+    args, unknown_args = parser.parse_known_args()
+    cfgs = parse_configs(cfg_root=args.cfgdir, args=unknown_args)
     _main = cfgs[args.recipe]
     return _main(recursive=False)
 

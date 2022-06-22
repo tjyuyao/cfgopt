@@ -1,6 +1,6 @@
 import argparse
 
-from .parser import parse_configs
+import cfgopt
 
 
 def main():
@@ -14,10 +14,11 @@ def main():
         default="cfg",
         help="config directory that maps to cfg:// root. (default: `cfg`)"
     )
-    args, _ = parser.parse_known_args()
-    cfgs = parse_configs(cfg_root=args.cfgdir)
+    args, unknown_args = parser.parse_known_args()
+    cfgs = cfgopt.parse_configs(cfg_root=args.cfgdir, args=unknown_args)
     _main = cfgs[args.recipe]
     return _main(recursive=False)
+
 
 if __name__ == "__main__":
     main()

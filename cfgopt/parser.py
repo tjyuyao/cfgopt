@@ -5,12 +5,14 @@ import os.path as osp
 import re
 import sys
 from copy import deepcopy
-from functools import partial
-from typing import Any, Dict
+from inspect import Parameter, signature
+from typing import Any, Dict, Union
 
 _CFGOPT_PROTOCOL = "cfg://"
 _NPRO = len(_CFGOPT_PROTOCOL)
 _SEP_TOKEN = "/"
+
+undefined = f"{_CFGOPT_PROTOCOL}__undefined__"
 
 def _remove_protocol_prefix(uri):
     if uri.startswith(_CFGOPT_PROTOCOL):
@@ -19,7 +21,7 @@ def _remove_protocol_prefix(uri):
 
 class CfgOptParseError(Exception): ...
 
-class CfgOptParseResult:
+class ConfigContainer:
     """This class stores a internal dict, and support 
     cfg:// format `__getitem__` and `__setitem__` method."""
 
@@ -37,7 +39,7 @@ class CfgOptParseResult:
             raise CfgOptParseError(f"While parsing '{uri}', Key '{key}' does not exist.") from None
 
         if isinstance(item, (dict, list)):
-            return CfgOptParseResult(item)
+            return ConfigContainer(item)
         else:
             return item
     
@@ -95,13 +97,21 @@ class CfgOptParseResult:
     
     def __call__(self, *args: Any, recursive=True, **kwds: Any) -> Any:
         
-        def wrap(data): return CfgOptParseResult(data) if isinstance(data, dict) else data
+        def wrap(data): return ConfigContainer(data) if isinstance(data, dict) else data
 
         def instantiate(data, *_args, **_kwds):
-            if "__module__" in data and "__class__" in data and isinstance(data["__class__"], str):
+            if "__module__" in data and "__class__" in data:
                 module = importlib.import_module(data["__module__"])
                 klass = getattr(module, data["__class__"])
-                return klass(*_args, **_kwds, **{k:wrap(v) for k, v in data.items() if not k.startswith("__")})
+                # update args and kwds
+                for k, arg in zip(signature(klass).parameters.keys(), _args):
+                    data[k] = deepcopy(arg)
+                data.update(deepcopy(_kwds))
+                # if there is any required param yet undefined, do not instantiate
+                for v in data.values():
+                    if v == undefined: return data
+                else: # else instantiate
+                    return klass(**{k:wrap(v) for k, v in data.items() if not k.startswith("__")})
             else: # fallback to direct call
                 return data(*_args, **_kwds)
             
@@ -121,42 +131,87 @@ class CfgOptParseResult:
             data = self.data
 
         return instantiate(data, *args, **kwds)
+    
+    def __contains__(self, uri):
+        try:
+            self[uri]
+            return True
+        except:
+            return False
 
 
-def parse_configs(cfg_root:str) -> CfgOptParseResult:
+def PartialClass(klass, *args, **kwds):
+
+    cfg_dict = {
+        "__module__": klass.__module__,
+        "__class__": klass.__qualname__
+    }
+
+    # set defaults
+    for k, param in signature(klass).parameters.items():
+        if param.default is Parameter.empty:
+            cfg_dict[k] = undefined
+        else:
+            cfg_dict[k] = param.default
+
+    # update args
+    for k, arg in zip(signature(klass).parameters.keys(), args):
+        cfg_dict[k] = deepcopy(arg)
+
+    # update kwds
+    cfg_dict.update(deepcopy(kwds))
+
+    return ConfigContainer(cfg_dict)
+
+
+def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
     """This function load all json config files in `cfg_root`,
     updates it with command line options, follows and substitute
     the `cfg://` block references."""
 
-    # load raw data from json files
-    root = {}
-    cfg_file_glob_pattern = osp.join(cfg_root, "**", "*.json")
-    for cfg_file in glob.glob(cfg_file_glob_pattern, recursive=True):
-        cfg_addr = osp.relpath(cfg_file, cfg_root)
-        with open(cfg_file) as _f:
-            try:
-                cfg_data = json.load(_f)
-            except json.JSONDecodeError as e:
-                raise CfgOptParseError(f"While parsing {cfg_file}, {e}.") from None
-        root[cfg_addr] = cfg_data
+    if isinstance(cfg_root, str) and osp.isdir(cfg_root):
+        # load raw data from json files
+        root = {}
+        cfg_file_glob_pattern = osp.join(cfg_root, "**", "*.json")
+        for cfg_file in glob.glob(cfg_file_glob_pattern, recursive=True):
+            cfg_addr = osp.relpath(cfg_file, cfg_root)
+            with open(cfg_file) as _f:
+                try:
+                    cfg_data = json.load(_f)
+                except json.JSONDecodeError as e:
+                    raise CfgOptParseError(f"While parsing {cfg_file}, {e}.") from None
+            root[cfg_addr] = cfg_data
+    elif isinstance(cfg_root, dict):
+        root = cfg_root
+    else:
+        raise TypeError(f"Type of `cfg_root` not supported, expect directory string or a dict, got `{type(cfg_root)}`.")
 
-    router = CfgOptParseResult(root)
+    router = ConfigContainer(root)
 
     # use command line options to update json configs
-    updator_pattern = re.compile("^--(.*\.json.*)=(.*)")
-    for updator in sys.argv:
-        match_obj = updator_pattern.fullmatch(updator)
-        if match_obj:
-            uri, data = match_obj.group(1, 2)
-            try:
-                data = json.loads(data)
-                json_error = None
-            except json.JSONDecodeError as e:
-                json_error = str(e)
-            finally:
-                if json_error:
-                    raise CfgOptParseError(f"While parsing {data}, {json_error}.")
-            router[uri] = data
+    def command_line_update(_args):
+        updator_pattern = re.compile("^--(.*)=(.*)")
+        unparsed_args = []
+        for updator in _args:
+            match_obj = updator_pattern.fullmatch(updator)
+            if match_obj:
+                uri, data = match_obj.group(1, 2)
+                # delay update if uri not exists:
+                try:
+                    router[uri]
+                except CfgOptParseError:
+                    unparsed_args.append(updator)
+                    continue
+                # try parse data
+                try:
+                    data = json.loads(data)
+                except json.JSONDecodeError as e:
+                    raise CfgOptParseError(f"While parsing {data}, {e}.") from None
+                router[uri] = data  # this line updates root
+        return unparsed_args
+        
+    args = deepcopy(args if args is not None else sys.argv[1:])
+    unparsed_args = command_line_update(args)
 
     # parse block reference
     def parse_json_block_reference(data, uri):
@@ -169,7 +224,7 @@ def parse_configs(cfg_root:str) -> CfgOptParseResult:
             if ".json" not in data:  # will be interpret as a relative uri
                 data = f"{uri[:uri.rfind(_SEP_TOKEN)]}/{_remove_protocol_prefix(data)}"
             data = router[data]
-            if isinstance(data, CfgOptParseResult):
+            if isinstance(data, ConfigContainer):
                 data = data.data
         return data
     
@@ -202,11 +257,39 @@ def parse_configs(cfg_root:str) -> CfgOptParseResult:
             for k in data:
                 if k.startswith("__"): continue
                 if "/" not in k: continue
-                CfgOptParseResult(data)[k] = update_with_nested_uri_key(data.pop(k))
+                ConfigContainer(data)[k] = update_with_nested_uri_key(data.pop(k))
         elif isinstance(data, list):
             data = [update_with_nested_uri_key(_) for _ in data]
         return data
     
     update_with_nested_uri_key(root)
+
+    # parse python objects
+    def parse_python_objects(data):
+        if isinstance(data, dict):
+            for k in data:
+                if k.startswith("__"): continue
+                data[k] = parse_python_objects(data[k])
+            if "__module__" in data and "__class__" in data:
+                module = importlib.import_module(data["__module__"])
+                klass = getattr(module, data["__class__"])
+
+                # fill omitted params with defaults
+                for k, param in signature(klass).parameters.items():
+                    if k in data:
+                        continue
+                    elif param.default is Parameter.empty:
+                        data[k] = undefined
+                    else:
+                        data[k] = param.default
+                
+        elif isinstance(data, list):
+            data = [parse_python_objects(_) for _ in data]
+        return data
+
+    parse_python_objects(root)
+
+    # command line update again (this time including expanded and inherited fields.)
+    unparsed_args = command_line_update(unparsed_args)
 
     return router
