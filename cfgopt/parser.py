@@ -8,15 +8,19 @@ from copy import deepcopy
 from inspect import Parameter, signature, isclass, isfunction
 from typing import Any, Dict, Union
 
-_CFGOPT_PROTOCOL = "cfg://"
-_NPRO = len(_CFGOPT_PROTOCOL)
-_SEP_TOKEN = "/"
+_PTC = "cfg://"
+_NPR = len(_PTC)
+_SEP = "/"
+_MOD = "__module__"
+_CLS = "__class__"
+_BSE = "__base__"
+_AST = "__as_type__"
 
-undefined = f"{_CFGOPT_PROTOCOL}__undefined__"
+undefined = f"{_PTC}__undefined__"
 
 def _remove_protocol_prefix(uri):
-    if uri.startswith(_CFGOPT_PROTOCOL):
-        uri = uri[_NPRO:]
+    if uri.startswith(_PTC):
+        uri = uri[_NPR:]
     return uri
 
 class CfgOptParseError(Exception): ...
@@ -96,9 +100,9 @@ class ConfigContainer:
             keys = [uri[:addr_sep]]
             if addr_sep == len(uri) or addr_sep == len(uri) - 1:
                 return keys
-            keys.extend(eliminate_parent(uri[addr_sep+1:].split(_SEP_TOKEN)))
+            keys.extend(eliminate_parent(uri[addr_sep+1:].split(_SEP)))
         else:
-            keys = eliminate_parent(uri.split(_SEP_TOKEN))
+            keys = eliminate_parent(uri.split(_SEP))
         
         return keys
     
@@ -110,16 +114,16 @@ class ConfigContainer:
         def wrap(data): return ConfigContainer(data) if isinstance(data, dict) else data
 
         def instantiate(data, *_args, **_kwds):
-            if "__module__" in data and "__class__" in data:
-                module = importlib.import_module(data["__module__"])
-                klass = getattr(module, data["__class__"])
+            if _MOD in data and _CLS in data:
+                module = importlib.import_module(data[_MOD])
+                klass = getattr(module, data[_CLS])
                 parameters = _get_parameters(klass)
                 # update args and kwds
                 for (k, p), arg in zip(parameters, _args):
                     if p.kind == Parameter.POSITIONAL_OR_KEYWORD:
                         data[k] = deepcopy(arg)
                     else:
-                        raise CfgOptParseError(f'Can\'t parse arguments for {data["__class__"]}.')
+                        raise CfgOptParseError(f'Can\'t parse arguments for {data[_CLS]}.')
                 data.update(deepcopy(_kwds))
                 # if there is any required param yet undefined, do not instantiate
                 for v in data.values():
@@ -135,7 +139,7 @@ class ConfigContainer:
                     for k in data:
                         if k.startswith("__"): continue
                         data[k] = recursive_instantiate(data[k], False)
-                    if not root and "__class__" in data:
+                    if not root and _CLS in data and not data.get(_AST, False):
                         data = instantiate(data)
                 elif isinstance(data, list):
                     data = [recursive_instantiate(d, False) for d in data]
@@ -157,8 +161,8 @@ class ConfigContainer:
 def PartialClass(klass, *args, **kwds):
 
     cfg_dict = {
-        "__module__": klass.__module__,
-        "__class__": klass.__qualname__
+        _MOD: klass.__module__,
+        _CLS: klass.__qualname__
     }
 
     # set defaults
@@ -234,11 +238,11 @@ def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
                 data[k] = parse_json_block_reference(data[k], f"{uri}/{k}", failok)
         elif isinstance(data, list):
             data = [parse_json_block_reference(d, f"{uri}/{i}", failok) for i, d in enumerate(data)]
-        elif isinstance(data, str) and data.startswith(_CFGOPT_PROTOCOL):
+        elif isinstance(data, str) and data.startswith(_PTC):
             backup_data = data
             try:
                 if ".json" not in data:  # will be interpret as a relative uri
-                    data = f"{uri[:uri.rfind(_SEP_TOKEN)]}/{_remove_protocol_prefix(data)}"
+                    data = f"{uri[:uri.rfind(_SEP)]}/{_remove_protocol_prefix(data)}"
                 data = router[data]
                 if isinstance(data, ConfigContainer):
                     data = data.data
@@ -248,16 +252,16 @@ def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
         return data
     
     # first time parsing might fail because inheritance is not parsed yet.
-    parse_json_block_reference(root, _CFGOPT_PROTOCOL[:-1], failok=True)
+    parse_json_block_reference(root, _PTC[:-1], failok=True)
 
     # parse inheritance (2 tasks)
     
     ## (1/2) inherit from __base__;
     def parse_inheritance(data):
         if isinstance(data, dict):
-            if "__base__" in data:
-                base:Dict = deepcopy(parse_inheritance(data["__base__"]))
-                data.pop("__base__")
+            if _BSE in data:
+                base:Dict = deepcopy(parse_inheritance(data[_BSE]))
+                data.pop(_BSE)
                 base.update(data)
                 data.update(base)
             for k in data:
@@ -285,7 +289,7 @@ def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
 
     # parse_json_block_reference again
     try:
-        parse_json_block_reference(root, _CFGOPT_PROTOCOL[:-1], failok=False)
+        parse_json_block_reference(root, _PTC[:-1], failok=False)
     except CfgOptParseError as e:
         raise CfgOptParseError(str(e)) from None
 
@@ -295,9 +299,9 @@ def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
             for k in data:
                 if k.startswith("__"): continue
                 data[k] = parse_python_objects(data[k])
-            if "__module__" in data and "__class__" in data:
-                module = importlib.import_module(data["__module__"])
-                klass = getattr(module, data["__class__"])
+            if _MOD in data and _CLS in data:
+                module = importlib.import_module(data[_MOD])
+                klass = getattr(module, data[_CLS])
 
                 # fill omitted params with defaults
                 for k, param in _get_parameters(klass):

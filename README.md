@@ -140,7 +140,7 @@ Users can specify a json dict, that contains a `__base__` field, linking to anot
 
 <details><summary><h3>parse python objects</h3></summary><p>
 
-`cfgopt` has a extremly flexible feature, that parse an json dict to almost ANY python objects defined in user's code or any code python can find in `PYTHON_PATH`.
+`cfgopt` has a extremly flexible feature, that parse an json dict to ALMOST any python objects defined in user's code or any code python can find in `PYTHON_PATH`.
 
 Users can specify a json dict, that contains `__module__` and `__class__` field. The `__module__` field will be imported by `importlib.import_module()` during parsing, and `__class__` field naming any python `callable` in the imported module will be passed to `functools.partial()` along with other fields as keyword arguments. Finally, the mapped "dict" in python would be directly callable to instantiate corresponding class or get result of corresponding functions.
 
@@ -151,7 +151,17 @@ klass = getattr(module, data["__class__"])
 data["__class__"] = partial(klass, **{k:v for k, v in data.items() if not k.startswith("__")})
 ```
 
+> **NOTE**: The python object should not use VAR_POSITIONAL and POSITIONAL_ONLY arguments, and keywords arguments are always recommended than positional arguments.
+
+By default, when arguments has nested object that is meant to be constructed by `cfgopt` and you call a higher level object, the nested ones in arguments will be **automatically and recursively instantiated** as long as **all its required arguments are defined**. If you want certain object not to be automatically created, add a `"__as_type__": true` field alongside the `__class__` field.
+
+Let us refer to these "dict"s with `__class__` and `__module__` fields as **python object builders**. You can call into these builders with extra arguments to instantiate them. You can also pass only partial arguments for multiple times, and it won't actually instantiate until all required arguments are ready, similar to above. This is very handy to pass around the builder everywhere deep into the code to collect scattered arguments. For example define a bachnorm builder, and pass it as argument to your networks, the latter can pass the channel argument when it is figured out from the preceding layer. The builder can be used multiple times.
+
+You can also create a builder from python code, by using `cfgopt.PartialClass()` function, very similar to standard `functools.partial()`, but again it allows being called multiple times until all required args are given.
+
 > TODO: an example.
+
+> `__as_type__` keyword added in `v0.5.3`.
 
 > Important Feature: `PartialClass` and lazily instantiation since `v0.5.0`.
 
