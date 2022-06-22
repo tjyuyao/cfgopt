@@ -5,7 +5,7 @@ import os.path as osp
 import re
 import sys
 from copy import deepcopy
-from inspect import Parameter, signature
+from inspect import Parameter, signature, isclass, isfunction
 from typing import Any, Dict, Union
 
 _CFGOPT_PROTOCOL = "cfg://"
@@ -20,6 +20,13 @@ def _remove_protocol_prefix(uri):
     return uri
 
 class CfgOptParseError(Exception): ...
+
+def _get_parameters(klass):
+    if isclass(klass):
+        parameters = list(signature(klass.__init__).parameters.items())[1:]
+    else:
+        parameters = list(signature(klass).parameters.items())
+    return parameters
 
 class ConfigContainer:
     """This class stores a internal dict, and support 
@@ -36,7 +43,10 @@ class ConfigContainer:
             for key in keys:
                 item = self._get_item_from_list_or_dict(item, key)
         except:
-            raise CfgOptParseError(f"While parsing '{uri}', Key '{key}' does not exist.") from None
+            msg = f"While parsing '{uri}', key '{key}' does not exist"
+            if isinstance(item, (dict, list)):
+                msg += f", available keys are '{[k for k in item]}'"
+            raise CfgOptParseError(msg) from None
 
         if isinstance(item, (dict, list)):
             return ConfigContainer(item)
@@ -103,9 +113,13 @@ class ConfigContainer:
             if "__module__" in data and "__class__" in data:
                 module = importlib.import_module(data["__module__"])
                 klass = getattr(module, data["__class__"])
+                parameters = _get_parameters(klass)
                 # update args and kwds
-                for k, arg in zip(signature(klass).parameters.keys(), _args):
-                    data[k] = deepcopy(arg)
+                for (k, p), arg in zip(parameters, _args):
+                    if p.kind == Parameter.POSITIONAL_OR_KEYWORD:
+                        data[k] = deepcopy(arg)
+                    else:
+                        raise CfgOptParseError(f'Can\'t parse arguments for {data["__class__"]}.')
                 data.update(deepcopy(_kwds))
                 # if there is any required param yet undefined, do not instantiate
                 for v in data.values():
@@ -214,24 +228,27 @@ def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
     unparsed_args = command_line_update(args)
 
     # parse block reference
-    def parse_json_block_reference(data, uri):
+    def parse_json_block_reference(data, uri, failok=False):
         if isinstance(data, dict):
             for k in data:
-                data[k] = parse_json_block_reference(data[k], f"{uri}/{k}")
+                data[k] = parse_json_block_reference(data[k], f"{uri}/{k}", failok)
         elif isinstance(data, list):
-            data = [parse_json_block_reference(d, f"{uri}/{i}") for i, d in enumerate(data)]
+            data = [parse_json_block_reference(d, f"{uri}/{i}", failok) for i, d in enumerate(data)]
         elif isinstance(data, str) and data.startswith(_CFGOPT_PROTOCOL):
-            if ".json" not in data:  # will be interpret as a relative uri
-                data = f"{uri[:uri.rfind(_SEP_TOKEN)]}/{_remove_protocol_prefix(data)}"
-            data = router[data]
-            if isinstance(data, ConfigContainer):
-                data = data.data
+            backup_data = data
+            try:
+                if ".json" not in data:  # will be interpret as a relative uri
+                    data = f"{uri[:uri.rfind(_SEP_TOKEN)]}/{_remove_protocol_prefix(data)}"
+                data = router[data]
+                if isinstance(data, ConfigContainer):
+                    data = data.data
+            except:
+                if not failok: raise
+                data = backup_data
         return data
     
-    try:
-        parse_json_block_reference(root, _CFGOPT_PROTOCOL[:-1])
-    except CfgOptParseError as e:
-        raise CfgOptParseError(str(e)) from None
+    # first time parsing might fail because inheritance is not parsed yet.
+    parse_json_block_reference(root, _CFGOPT_PROTOCOL[:-1], failok=True)
 
     # parse inheritance (2 tasks)
     
@@ -264,6 +281,12 @@ def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
     
     update_with_nested_uri_key(root)
 
+    # parse_json_block_reference again
+    try:
+        parse_json_block_reference(root, _CFGOPT_PROTOCOL[:-1], failok=False)
+    except CfgOptParseError as e:
+        raise CfgOptParseError(str(e)) from None
+
     # parse python objects
     def parse_python_objects(data):
         if isinstance(data, dict):
@@ -275,14 +298,14 @@ def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
                 klass = getattr(module, data["__class__"])
 
                 # fill omitted params with defaults
-                for k, param in signature(klass).parameters.items():
-                    if k in data:
-                        continue
-                    elif param.default is Parameter.empty:
-                        data[k] = undefined
-                    else:
-                        data[k] = param.default
-                
+                for k, param in _get_parameters(klass):
+                    if param.kind in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY):
+                        if k in data:
+                            continue
+                        elif param.default is Parameter.empty:
+                            data[k] = undefined
+                        else:
+                            data[k] = param.default
         elif isinstance(data, list):
             data = [parse_python_objects(_) for _ in data]
         return data
