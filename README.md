@@ -105,6 +105,7 @@ def test_blockref_in_list():
     assert cfg["recipes.json/recipe2/use_data/1/meta/location"] == "/data/2/loc"
 ```
 
+> `__hostname__` in URI will be translated into what you get by executing `hostname` in shell. Since `v0.5.5`.
 > Relative URI support added in `v0.3.0`.
 > Feature first added in `v0.1`.
 

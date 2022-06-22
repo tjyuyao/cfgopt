@@ -7,20 +7,23 @@ import sys
 from copy import deepcopy
 from inspect import Parameter, signature, isclass, isfunction
 from typing import Any, Dict, Union
+from socket import gethostname
 
-_PTC = "cfg://"
-_NPR = len(_PTC)
-_SEP = "/"
-_MOD = "__module__"
-_CLS = "__class__"
-_BSE = "__base__"
 _AST = "__as_type__"
+_BSE = "__base__"
+_CLS = "__class__"
+_HST = "__hostname__"
+_MOD = "__module__"
+_PRT = ".."  # parent
+_PTC = "cfg://"  # protocal
+_PTL = len(_PTC)  # protocal length
+_SEP = "/"  # seperator
 
 undefined = f"{_PTC}__undefined__"
 
 def _remove_protocol_prefix(uri):
     if uri.startswith(_PTC):
-        uri = uri[_NPR:]
+        uri = uri[_PTL:]
     return uri
 
 class CfgOptParseError(Exception): ...
@@ -83,12 +86,14 @@ class ConfigContainer:
             return [uri]
         # remove optional 'cfg://' prefix
         uri = _remove_protocol_prefix(uri)
-        # eliminate ".." in dict hiearchy keys
-        def eliminate_parent(_keys):
+        # translate special keys in dict hiearchy keys
+        def translate_uri(_keys):
             out = []
             for k in _keys:
-                if k == "..":
+                if k == _PRT:
                     out.pop()
+                elif k == _HST:
+                    out.append(gethostname())
                 else:
                     out.append(k)
             return out
@@ -100,9 +105,9 @@ class ConfigContainer:
             keys = [uri[:addr_sep]]
             if addr_sep == len(uri) or addr_sep == len(uri) - 1:
                 return keys
-            keys.extend(eliminate_parent(uri[addr_sep+1:].split(_SEP)))
+            keys.extend(translate_uri(uri[addr_sep+1:].split(_SEP)))
         else:
-            keys = eliminate_parent(uri.split(_SEP))
+            keys = translate_uri(uri.split(_SEP))
         
         return keys
     
