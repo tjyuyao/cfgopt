@@ -271,10 +271,12 @@ def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
     ## (2/2) use nested uri key to update json configs;
     def update_with_nested_uri_key(data):
         if isinstance(data, dict):
-            for k in data:
+            for k in list(data.keys()):
                 if k.startswith("__"): continue
-                if "/" not in k: continue
-                ConfigContainer(data)[k] = update_with_nested_uri_key(data.pop(k))
+                if "/" in k:
+                    ConfigContainer(data)[k] = update_with_nested_uri_key(data.pop(k))
+                else:
+                    data[k] = update_with_nested_uri_key(data[k])
         elif isinstance(data, list):
             data = [update_with_nested_uri_key(_) for _ in data]
         return data
