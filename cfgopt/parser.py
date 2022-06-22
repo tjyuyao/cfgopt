@@ -106,6 +106,12 @@ class ConfigContainer:
         
         return keys
     
+    def __getstate__(self):
+        return self.data
+
+    def __setstate__(self, data):
+        self.data = data
+    
     def __getattr__(self, attrname):
         return getattr(self.data, attrname)
     
