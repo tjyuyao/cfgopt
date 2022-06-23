@@ -3,11 +3,13 @@ import importlib
 import json
 import os.path as osp
 import re
+import jsbeautifier
 import sys
 from copy import deepcopy
 from inspect import Parameter, signature, isclass, isfunction
 from typing import Any, Dict, Union
 from socket import gethostname
+from collections import abc
 
 _AST = "__as_type__"
 _BSE = "__base__"
@@ -35,6 +37,9 @@ def _get_parameters(klass):
         parameters = list(signature(klass).parameters.items())
     return parameters
 
+def wrap(data):
+    return ConfigContainer(data) if isinstance(data, dict) else data
+
 class ConfigContainer:
     """This class stores a internal dict, and support 
     cfg:// format `__getitem__` and `__setitem__` method."""
@@ -42,6 +47,25 @@ class ConfigContainer:
     def __init__(self, data: Dict) -> None:
         self.data = data
         """stores the raw dict data."""
+    
+    def items(self):
+        if not isinstance(self.data, abc.Mapping):
+            raise TypeError()
+        for k, v in self.data.items():
+            yield k, wrap(v)
+    
+    def values(self):
+        if not isinstance(self.data, abc.Mapping):
+            raise TypeError()
+        for v in self.data.values():
+            yield wrap(v)
+        
+    def to_json(self, file=None):
+        json_str = jsbeautifier.beautify(json.dumps(self.data))
+        if file is not None:
+            with open(file, 'w') as writer:
+                writer.write(json_str)
+        return json_str
     
     def __getitem__(self, uri:str):
         keys = self._split_uri(uri)
@@ -122,19 +146,21 @@ class ConfigContainer:
     
     def __call__(self, *args: Any, recursive=True, **kwds: Any) -> Any:
         
-        def wrap(data): return ConfigContainer(data) if isinstance(data, dict) else data
-
         def instantiate(data, *_args, **_kwds):
             if _MOD in data and _CLS in data:
                 module = importlib.import_module(data[_MOD])
                 klass = getattr(module, data[_CLS])
-                parameters = _get_parameters(klass)
                 # update args and kwds
-                for (k, p), arg in zip(parameters, _args):
-                    if p.kind == Parameter.POSITIONAL_OR_KEYWORD:
-                        data[k] = deepcopy(arg)
-                    else:
-                        raise CfgOptParseError(f'Can\'t parse arguments for {data[_CLS]}.')
+                try:
+                    for (k, p), arg in zip(_get_parameters(klass), _args):
+                        if p.kind == Parameter.POSITIONAL_OR_KEYWORD:
+                            data[k] = arg
+                        else:
+                            raise CfgOptParseError(f'Can\'t parse argument \'{k}\' for {data[_CLS]}.')
+                except ValueError as e:
+                    if "no signature found" in e.args[0]:
+                        if len(_args):
+                            raise CfgOptParseError(f"Please use keyword to pass in arguments for `{data[_CLS]}`.") from e
                 data.update(deepcopy(_kwds))
                 # if there is any required param yet undefined, do not instantiate
                 for v in data.values():
@@ -251,7 +277,7 @@ def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
                 data[k] = parse_json_block_reference(data[k], f"{uri}/{k}", failok)
         elif isinstance(data, list):
             data = [parse_json_block_reference(d, f"{uri}/{i}", failok) for i, d in enumerate(data)]
-        elif isinstance(data, str) and data.startswith(_PTC):
+        elif isinstance(data, str) and data.startswith(_PTC) and data != undefined:
             backup_data = data
             try:
                 if ".json" not in data:  # will be interpret as a relative uri
@@ -320,14 +346,17 @@ def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
                 klass = getattr(module, data[_CLS])
 
                 # fill omitted params with defaults
-                for k, param in _get_parameters(klass):
-                    if param.kind in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY):
-                        if k in data:
-                            continue
-                        elif param.default is Parameter.empty:
-                            data[k] = undefined
-                        else:
-                            data[k] = param.default
+                try:
+                    for k, param in _get_parameters(klass):
+                        if param.kind in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY):
+                            if k in data:
+                                continue
+                            elif param.default is Parameter.empty:
+                                data[k] = undefined
+                            else:
+                                pass
+                except ValueError as e:
+                    if "no signature found" in e.args[0]: pass
         elif isinstance(data, list):
             data = [parse_python_objects(_) for _ in data]
         return data
