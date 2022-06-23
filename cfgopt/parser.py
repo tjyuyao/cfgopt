@@ -198,7 +198,9 @@ def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
     updates it with command line options, follows and substitute
     the `cfg://` block references."""
 
-    if isinstance(cfg_root, str) and osp.isdir(cfg_root):
+    if isinstance(cfg_root, str):
+        if not osp.isdir(cfg_root):
+            raise TypeError(f"`cfg_root` (\"{cfg_root}\") is not a directory.")
         # load raw data from json files
         root = {}
         cfg_file_glob_pattern = osp.join(cfg_root, "**", "*.json")
@@ -311,7 +313,10 @@ def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
                 if k.startswith("__"): continue
                 data[k] = parse_python_objects(data[k])
             if _MOD in data and _CLS in data:
-                module = importlib.import_module(data[_MOD])
+                try:
+                    module = importlib.import_module(data[_MOD])
+                except ModuleNotFoundError as e:
+                    raise ModuleNotFoundError(e, data[_MOD])
                 klass = getattr(module, data[_CLS])
 
                 # fill omitted params with defaults
@@ -327,7 +332,10 @@ def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
             data = [parse_python_objects(_) for _ in data]
         return data
 
-    parse_python_objects(root)
+    try:
+        parse_python_objects(root)
+    except ModuleNotFoundError as e:
+        raise CfgOptParseError(f"Trying to import '{e.args[1]}', but n{str(e.args[0])[1:]}. Check your PYTHONPATH.") from None
 
     # command line update again (this time including expanded and inherited fields.)
     unparsed_args = command_line_update(unparsed_args)
