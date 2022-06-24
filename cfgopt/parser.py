@@ -270,7 +270,7 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root="") -> ConfigC
         
     args = deepcopy(args if args is not None else sys.argv[1:])
     unparsed_args = command_line_update(args)
-
+    
     # parse block reference
     def parse_json_block_reference(data, uri, failok=False):
         if isinstance(data, dict):
@@ -369,5 +369,10 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root="") -> ConfigC
 
     # command line update again (this time including expanded and inherited fields.)
     unparsed_args = command_line_update(unparsed_args)
-
+    
+    if len(unparsed_args):
+        import warnings
+        warnings.warn(
+            f"cfgopt.parse_configs(): some command args are not recognized, including {str(unparsed_args)[1:-1]}. Please double check the (relative) URI path.")
+    
     return router
