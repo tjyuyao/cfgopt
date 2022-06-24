@@ -192,7 +192,11 @@ def main():
         help="config directory that maps to cfg:// root. (default: `cfg`)"
     )
     args, unknown_args = parser.parse_known_args()
-    cfgs = parse_configs(cfg_root=args.cfgdir, args=unknown_args)
+    cfgs = cfgopt.parse_configs(
+        cfg_root=args.cfgdir,
+        args=unknown_args,
+        args_root=args.recipe,
+    )
     _main = cfgs[args.recipe]
     return _main(recursive=False)
 
@@ -203,6 +207,8 @@ if __name__ == "__main__":
 This example `main()` function accepts the first argument as a previous described `cfg://`-format uri, that parses a python callable function, and call it as the main function. This is also implemented as `cfgopt.main()`, and user can use `cfgoptrun` command direct from shell, or just import this main function and call it in usercode with extra python arguments.
 
 > TODO: an example.
+
+> Behaviour changed: `cfgoptrun` interprets commandline arguments as relative path to `recipe` instead of absolute(full) uri since `v0.6.0`.
 
 > Add `cfgoptrun` command (entrypoint) in `v0.2`.
 

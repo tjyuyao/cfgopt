@@ -219,7 +219,7 @@ def PartialClass(klass, *args, **kwds):
     return ConfigContainer(cfg_dict)
 
 
-def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
+def parse_configs(cfg_root:Union[str, Dict], args=None, args_root="") -> ConfigContainer:
     """This function load all json config files in `cfg_root`,
     updates it with command line options, follows and substitute
     the `cfg://` block references."""
@@ -252,7 +252,8 @@ def parse_configs(cfg_root:Union[str, Dict], args=None) -> ConfigContainer:
         for updator in _args:
             match_obj = updator_pattern.fullmatch(updator)
             if match_obj:
-                uri, data = match_obj.group(1, 2)
+                uri_, data = match_obj.group(1, 2)
+                uri = _SEP.join([args_root, uri_])
                 # delay update if uri not exists:
                 try:
                     router[uri]
