@@ -90,17 +90,28 @@ class ConfigContainer:
         for key in keys[:-1]:
             item = self._get_item_from_list_or_dict(item, key)
         key = keys[-1]
-        item[key] = data
+        self._set_item_from_list_or_dict(item, key, data)
     
     def __repr__(self) -> str:
         return f"{self.__class__.__qualname__}({repr(self.data)})"
     
     @staticmethod
     def _get_item_from_list_or_dict(item, key):
+        """ Robust version of `item[key]`, that also applies to list (not only dict)."""
         if isinstance(item, list):
             return item[int(key)]
         elif isinstance(item, dict):
             return item[key]
+        else:
+            raise TypeError(f"Expect a list or dict, got {type(item)}.")
+
+    @staticmethod
+    def _set_item_from_list_or_dict(item, key, value):
+        """ Robust version of `item[key] = value`, that also applies to list (not only dict)."""
+        if isinstance(item, list):
+            item[int(key)] = value
+        elif isinstance(item, dict):
+            item[key] = value
         else:
             raise TypeError(f"Expect a list or dict, got {type(item)}.")
     
@@ -219,7 +230,7 @@ def PartialClass(klass, *args, **kwds):
     return ConfigContainer(cfg_dict)
 
 
-def parse_configs(cfg_root:Union[str, Dict], args=None, args_root="") -> ConfigContainer:
+def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> ConfigContainer:
     """This function load all json config files in `cfg_root`,
     updates it with command line options, follows and substitute
     the `cfg://` block references."""
@@ -253,11 +264,14 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root="") -> ConfigC
             match_obj = updator_pattern.fullmatch(updator)
             if match_obj:
                 uri_, data = match_obj.group(1, 2)
-                uri = _SEP.join([args_root, uri_])
+                if args_root is None:
+                    uri = uri_
+                else:
+                    uri = _SEP.join([args_root, uri_])
                 # delay update if uri not exists:
                 try:
                     router[uri]
-                except CfgOptParseError:
+                except CfgOptParseError as e:
                     unparsed_args.append(updator)
                     continue
                 # try parse data
