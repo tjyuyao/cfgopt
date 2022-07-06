@@ -67,6 +67,11 @@ class ConfigContainer:
                 writer.write(json_str)
         return json_str
     
+    def __eq__(self, other):
+        if isinstance(other, ConfigContainer):
+            other = other.data
+        return self.data == other
+    
     def __getitem__(self, uri:str):
         keys = self._split_uri(uri)
         item = self.data
@@ -161,7 +166,7 @@ class ConfigContainer:
             if _MOD in data and _CLS in data:
                 module = importlib.import_module(data[_MOD])
                 klass = getattr(module, data[_CLS])
-                # update args and kwds
+                # update args
                 try:
                     for (k, p), arg in zip(_get_parameters(klass), _args):
                         if p.kind == Parameter.POSITIONAL_OR_KEYWORD:
@@ -172,7 +177,13 @@ class ConfigContainer:
                     if "no signature found" in e.args[0]:
                         if len(_args):
                             raise CfgOptParseError(f"Please use keyword to pass in arguments for `{data[_CLS]}`.") from e
+                # update kwds
+                for k, p in _get_parameters(klass):
+                    if p.kind == Parameter.VAR_KEYWORD and p.name in data:
+                        var_keyword_subdict = data.pop(p.name)
+                        data.update(var_keyword_subdict)
                 data.update(deepcopy(_kwds))
+                
                 # if there is any required param yet undefined, do not instantiate
                 for v in data.values():
                     if v == undefined: return data

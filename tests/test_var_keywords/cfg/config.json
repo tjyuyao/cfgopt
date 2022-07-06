@@ -1,0 +1,14 @@
+{
+    "func1_1": {
+        "__module__": "test_var_keywords.test_var_keywords",
+        "__class__": "func1",
+        "dummy_arg1": "dummy_arg1",
+        "keywords": {
+            "dummy_kwd1": 1,
+            "dummy_kwd2": null,
+            "dummy_kwd3": "3",
+            "dummy_kwd4": {"x":1},
+            "dummy_kwd5": [4, 5, 7]
+        }
+    }
+}
