@@ -11,7 +11,7 @@ def func1(dummy_arg1, **keywords):
     return keywords
 
 def test_blockref_in_list():
-    cfg = cfgopt.parse_configs(cfg_root='test_var_keywords/cfg')["config.json"]
+    cfg = cfgopt.parse_configs(cfg_root='test_var_keywords/cfg', args=[])["config.json"]
 
     cfg["func1_1"]()
     assert cfg["func1_1"](dummy_kwd6=6)["dummy_kwd6"] == 6

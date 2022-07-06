@@ -3,6 +3,7 @@ import importlib
 import json
 import os.path as osp
 import re
+import types
 import jsbeautifier
 import sys
 from copy import deepcopy
@@ -28,7 +29,9 @@ def _remove_protocol_prefix(uri):
         uri = uri[_PTL:]
     return uri
 
-class CfgOptParseError(Exception): ...
+class ConfigParseError(Exception): ...
+
+class URINotFoundError(Exception): ...
 
 def _get_parameters(klass):
     if isclass(klass):
@@ -79,10 +82,18 @@ class ConfigContainer:
             for key in keys:
                 item = self._get_item_from_list_or_dict(item, key)
         except:
-            msg = f"While parsing '{uri}', key '{key}' does not exist"
+            msg = f"While addressing ['{uri}'], key '{key}' does not exist"
             if isinstance(item, (dict, list)):
-                msg += f", available keys are '{[k for k in item]}'"
-            raise CfgOptParseError(msg) from None
+                msg += f", available keys are {[k for k in item]}"
+                
+            # error message will show the line calling "data[key]" from outer frame.
+            traceback = sys.exc_info()[2]
+            back_frame = traceback.tb_frame.f_back
+            back_tb = types.TracebackType(tb_next=None,
+                                  tb_frame=back_frame,
+                                  tb_lasti=back_frame.f_lasti,
+                                  tb_lineno=back_frame.f_lineno)
+            raise URINotFoundError(msg).with_traceback(back_tb) from None
 
         if isinstance(item, (dict, list)):
             return ConfigContainer(item)
@@ -172,11 +183,11 @@ class ConfigContainer:
                         if p.kind == Parameter.POSITIONAL_OR_KEYWORD:
                             data[k] = arg
                         else:
-                            raise CfgOptParseError(f'Can\'t parse argument \'{k}\' for {data[_CLS]}.')
+                            raise ConfigParseError(f'Can\'t parse argument \'{k}\' for {data[_CLS]}.')
                 except ValueError as e:
                     if "no signature found" in e.args[0]:
                         if len(_args):
-                            raise CfgOptParseError(f"Please use keyword to pass in arguments for `{data[_CLS]}`.") from e
+                            raise ConfigParseError(f"Please use keyword to pass in arguments for `{data[_CLS]}`.") from e
                 # update kwds
                 for k, p in _get_parameters(klass):
                     if p.kind == Parameter.VAR_KEYWORD and p.name in data:
@@ -205,7 +216,7 @@ class ConfigContainer:
                 return data
             data = recursive_instantiate(deepcopy(self.data), root=True)
         else:
-            data = self.data
+            data = deepcopy(self.data)
 
         return instantiate(data, *args, **kwds)
     
@@ -258,7 +269,7 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
                 try:
                     cfg_data = json.load(_f)
                 except json.JSONDecodeError as e:
-                    raise CfgOptParseError(f"While parsing {cfg_file}, {e}.") from None
+                    raise ConfigParseError(f"While parsing {cfg_file}, {e}.") from None
             root[cfg_addr] = cfg_data
     elif isinstance(cfg_root, dict):
         root = cfg_root
@@ -282,14 +293,14 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
                 # delay update if uri not exists:
                 try:
                     router[uri]
-                except CfgOptParseError as e:
+                except ConfigParseError as e:
                     unparsed_args.append(updator)
                     continue
                 # try parse data
                 try:
                     data = json.loads(data)
                 except json.JSONDecodeError as e:
-                    raise CfgOptParseError(f"While parsing {data}, {e}.") from None
+                    raise ConfigParseError(f"While parsing {data}, {e}.") from None
                 router[uri] = data  # this line updates root
         return unparsed_args
         
@@ -322,20 +333,22 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
     # parse inheritance (2 tasks)
     
     ## (1/2) inherit from __base__;
-    def parse_inheritance(data):
+    def parse_inheritance(data, uri):
         if isinstance(data, dict):
             if _BSE in data:
-                base:Dict = deepcopy(parse_inheritance(data[_BSE]))
+                base:Dict = deepcopy(parse_inheritance(data[_BSE], f"{uri}/{_BSE}"))
+                if not isinstance(base, abc.Mapping):
+                    raise ConfigParseError(f"Unable to inherit the base object since it is not parsed as a dict. The base object is: {repr(base)}\nConfig origin: '{uri}/{_BSE}'")
                 data.pop(_BSE)
                 base.update(data)
                 data.update(base)
             for k in data:
-                data[k] = parse_inheritance(data[k])
+                data[k] = parse_inheritance(data[k], f"{uri}/{k}")
         elif isinstance(data, list):
-            data = [parse_inheritance(_) for _ in data]
+            data = [parse_inheritance(_, f"{uri}/{i}") for i, _ in enumerate(data)]
         return data
     
-    parse_inheritance(root)
+    parse_inheritance(root, _PTC[:-1])
 
     ## (2/2) use nested uri key to update json configs;
     def update_with_nested_uri_key(data):
@@ -355,21 +368,24 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
     # parse_json_block_reference again
     try:
         parse_json_block_reference(root, _PTC[:-1], failok=False)
-    except CfgOptParseError as e:
-        raise CfgOptParseError(str(e)) from None
+    except ConfigParseError as e:
+        raise ConfigParseError(str(e)) from None
 
     # parse python objects
-    def parse_python_objects(data):
+    def parse_python_objects(data, uri):
         if isinstance(data, dict):
             for k in data:
                 if k.startswith("__"): continue
-                data[k] = parse_python_objects(data[k])
+                data[k] = parse_python_objects(data[k], f'{uri}/{k}')
             if _MOD in data and _CLS in data:
                 try:
                     module = importlib.import_module(data[_MOD])
                 except ModuleNotFoundError as e:
-                    raise ModuleNotFoundError(e, data[_MOD])
-                klass = getattr(module, data[_CLS])
+                    raise ConfigParseError(f"Trying to import '{data[_MOD]}', but n{str(e.args[0])[1:]}. Check your PYTHONPATH.\nConfig origin: '{uri}'")
+                try:
+                    klass = getattr(module, data[_CLS])
+                except AttributeError as e:
+                    raise ConfigParseError(f"{str(e.args[0])}\nConfig origin: '{uri}'")
 
                 # fill omitted params with defaults
                 try:
@@ -384,13 +400,13 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
                 except ValueError as e:
                     if "no signature found" in e.args[0]: pass
         elif isinstance(data, list):
-            data = [parse_python_objects(_) for _ in data]
+            data = [parse_python_objects(_, f'{uri}/{i}') for i, _ in enumerate(data)]
         return data
 
     try:
-        parse_python_objects(root)
-    except ModuleNotFoundError as e:
-        raise CfgOptParseError(f"Trying to import '{e.args[1]}', but n{str(e.args[0])[1:]}. Check your PYTHONPATH.") from None
+        parse_python_objects(root, _PTC[:-1])
+    except ConfigParseError as e:
+        raise ConfigParseError(str(e)) from None
 
     # command line update again (this time including expanded and inherited fields.)
     unparsed_args = command_line_update(unparsed_args)
