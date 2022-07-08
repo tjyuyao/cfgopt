@@ -283,7 +283,7 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
         updator_pattern = re.compile("^--(.*)=(.*)")
         unparsed_args = []
         for updator in _args:
-            match_obj = updator_pattern.fullmatch(updator)
+            match_obj = updator_pattern.fullmatch(updator.replace("\n", ""))
             if match_obj:
                 uri_, data = match_obj.group(1, 2)
                 if args_root is None:
