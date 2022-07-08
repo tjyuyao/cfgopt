@@ -293,7 +293,7 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
                 # delay update if uri not exists:
                 try:
                     router[uri]
-                except ConfigParseError as e:
+                except URINotFoundError as e:
                     unparsed_args.append(updator)
                     continue
                 # try parse data
