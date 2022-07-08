@@ -114,7 +114,9 @@ class ConfigContainer:
     @staticmethod
     def _get_item_from_list_or_dict(item, key):
         """ Robust version of `item[key]`, that also applies to list (not only dict)."""
-        if isinstance(item, list):
+        if key == "":
+            return KeyError("Empty keys are not allowed.")
+        elif isinstance(item, list):
             return item[int(key)]
         elif isinstance(item, dict):
             return item[key]
@@ -124,7 +126,9 @@ class ConfigContainer:
     @staticmethod
     def _set_item_from_list_or_dict(item, key, value):
         """ Robust version of `item[key] = value`, that also applies to list (not only dict)."""
-        if isinstance(item, list):
+        if key == "":
+            return KeyError("Empty keys are not allowed.")
+        elif isinstance(item, list):
             item[int(key)] = value
         elif isinstance(item, dict):
             item[key] = value
@@ -145,6 +149,8 @@ class ConfigContainer:
                     out.pop()
                 elif k == _HST:
                     out.append(gethostname())
+                elif k == "":
+                    continue
                 else:
                     out.append(k)
             return out
@@ -412,8 +418,9 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
     unparsed_args = command_line_update(unparsed_args)
     
     if len(unparsed_args):
-        import warnings
-        warnings.warn(
-            f"cfgopt.parse_configs(): some command args are not recognized, including {str(unparsed_args)[1:-1]}. Please double check the (relative) URI path.")
+        unparsed_args_ = ', '.join(f"'{ua[:ua.find('=')+1]}...'" for ua in unparsed_args)
+        
+        raise ConfigParseError(
+            f"Some command args are not found in the config definition thus failed to be updated. They are [{unparsed_args_}]. Please double check the URI path.")
     
     return router
