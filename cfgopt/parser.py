@@ -36,13 +36,27 @@ class URINotFoundError(Exception): ...
 def _get_parameters(klass):
     if isclass(klass):
         parameters = list(signature(klass.__init__).parameters.items())[1:]
-    else:
+    elif isfunction(klass):
         parameters = list(signature(klass).parameters.items())
+    elif hasattr(klass, "__call__"):
+        parameters = list(signature(klass.__call__).parameters.items())
+    else:
+        raise ConfigParseError(f"Unknown Python Callable {klass.__name__}")
     return parameters
 
 def wrap(data):
     return ConfigContainer(data) if isinstance(data, dict) else data
 
+def dewrap(data):
+    if isinstance(data, ConfigContainer):
+        return data.data
+    elif isinstance(data, dict):
+        return {k:dewrap(v) for k, v in data.items()}
+    elif isinstance(data, (list, tuple)):
+        return [dewrap(v) for v in data]
+    else:
+        return data
+    
 class ConfigContainer:
     """This class stores a internal dict, and support 
     cfg:// format `__getitem__` and `__setitem__` method."""
@@ -64,7 +78,8 @@ class ConfigContainer:
             yield wrap(v)
         
     def to_json(self, file=None):
-        json_str = jsbeautifier.beautify(json.dumps(self.data))
+        
+        json_str = jsbeautifier.beautify(json.dumps(dewrap(self.data)))
         if file is not None:
             with open(file, 'w') as writer:
                 writer.write(json_str)
@@ -82,7 +97,7 @@ class ConfigContainer:
             for key in keys:
                 item = self._get_item_from_list_or_dict(item, key)
         except:
-            msg = f"While addressing ['{uri}'], key '{key}' does not exist"
+            msg = f"While addressing '{uri}', key '{key}' does not exist"
             if isinstance(item, (dict, list)):
                 msg += f", available keys are {[k for k in item]}"
                 
@@ -118,8 +133,10 @@ class ConfigContainer:
             return KeyError("Empty keys are not allowed.")
         elif isinstance(item, list):
             return item[int(key)]
-        elif isinstance(item, dict):
+        elif isinstance(item, (dict, ConfigContainer)):
             return item[key]
+        elif item is None:
+            raise KeyError(key)
         else:
             raise TypeError(f"Expect a list or dict, got {type(item)}.")
 
@@ -130,7 +147,7 @@ class ConfigContainer:
             return KeyError("Empty keys are not allowed.")
         elif isinstance(item, list):
             item[int(key)] = value
-        elif isinstance(item, dict):
+        elif isinstance(item, (dict, ConfigContainer)):
             item[key] = value
         else:
             raise TypeError(f"Expect a list or dict, got {type(item)}.")
@@ -200,6 +217,19 @@ class ConfigContainer:
                         var_keyword_subdict = data.pop(p.name)
                         data.update(var_keyword_subdict)
                 data.update(deepcopy(_kwds))
+                
+                # check wether klass accept variable keyword
+                if Parameter.VAR_KEYWORD not in [p.kind for _, p in _get_parameters(klass)]:
+                    accept_args = [k for k, p in _get_parameters(klass)]
+                    for k in data:
+                        if k.startswith("__"):
+                            continue
+                        if k not in accept_args:
+                            raise ConfigParseError(f"Unsupported parameter '{k}' for class '{klass.__name__}'.")
+                        
+                for k, p in _get_parameters(klass):
+                    if p.kind == Parameter.POSITIONAL_ONLY:
+                        raise ConfigParseError(f"Unsupported parameter type '{p.kind}' for class '{klass.__name__}'.")
                 
                 # if there is any required param yet undefined, do not instantiate
                 for v in data.values():
@@ -328,54 +358,46 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
                 data = router[data]
                 if isinstance(data, ConfigContainer):
                     data = data.data
-            except:
-                if not failok: raise
+            except Exception as e:
+                if not failok:
+                    raise type(e)(f"{e.args[0]}\nConfig origin: {uri}") from None
                 data = backup_data
         return data
     
     # first time parsing might fail because inheritance is not parsed yet.
     parse_json_block_reference(root, _PTC[:-1], failok=True)
 
-    # parse inheritance (2 tasks)
-    
-    ## (1/2) inherit from __base__;
+    # parse inheritance
     def parse_inheritance(data, uri):
         if isinstance(data, dict):
             if _BSE in data:
                 base:Dict = deepcopy(parse_inheritance(data[_BSE], f"{uri}/{_BSE}"))
                 if not isinstance(base, abc.Mapping):
+                    breakpoint()
                     raise ConfigParseError(f"Unable to inherit the base object since it is not parsed as a dict. The base object is: {repr(base)}\nConfig origin: '{uri}/{_BSE}'")
                 data.pop(_BSE)
                 base.update(data)
                 data.update(base)
-            for k in data:
-                data[k] = parse_inheritance(data[k], f"{uri}/{k}")
+            for k in list(data.keys()):
+                if "/" in k:
+                    try:
+                        ConfigContainer(data)[k] = parse_inheritance(data.pop(k), f"{uri}/{k}")
+                    except KeyError as e:
+                        msg = f"While addressing '{e.args[0]}', inheritance key '{k}' does not exist.\nConfig origin: {uri}"
+                        raise URINotFoundError(msg) from None
+                else:
+                    data[k] = parse_inheritance(data[k], f"{uri}/{k}")
         elif isinstance(data, list):
             data = [parse_inheritance(_, f"{uri}/{i}") for i, _ in enumerate(data)]
         return data
     
     parse_inheritance(root, _PTC[:-1])
-
-    ## (2/2) use nested uri key to update json configs;
-    def update_with_nested_uri_key(data):
-        if isinstance(data, dict):
-            for k in list(data.keys()):
-                if k.startswith("__"): continue
-                if "/" in k:
-                    ConfigContainer(data)[k] = update_with_nested_uri_key(data.pop(k))
-                else:
-                    data[k] = update_with_nested_uri_key(data[k])
-        elif isinstance(data, list):
-            data = [update_with_nested_uri_key(_) for _ in data]
-        return data
     
-    update_with_nested_uri_key(root)
-
     # parse_json_block_reference again
     try:
         parse_json_block_reference(root, _PTC[:-1], failok=False)
-    except ConfigParseError as e:
-        raise ConfigParseError(str(e)) from None
+    except Exception as e:
+        raise type(e)(*e.args) from None
 
     # parse python objects
     def parse_python_objects(data, uri):
