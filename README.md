@@ -113,11 +113,13 @@ def test_blockref_in_list():
 
 <details><summary><h3>command-line update</h3></summary><p>
 
-`cfgopt` will automatically parse command line options matching the python regex format `^--(.*)=(.*)`, and interpret it as an update of the parsed configuration folder. The right hand side of `=` should be valid json, and you might need to take care of shell escaping your special characters.
+`cfgopt` will automatically parse command line options matching the python regex format `^--(.*?)=(.*)`, and interpret it as an update of the parsed configuration folder. The right hand side of `=` should be valid json, and you might need to take care of shell escaping your special characters.
 
 For example, you can write `--train.json/max_epochs=100` or `--train.json/max_epochs="100"`, since your shell would escape double-quotes, you will get an integer `100` in both cases.
 
 But if you write `--train.json/resume=\"/path/to/ckpt\"` or `--train.json/resume='"/path/to/ckpt"'`, you should probably get a string value, which depends on your shell implementation.
+
+> Unmatched uri/keys are treated as errors since `v0.7.0`. Regex format updated as `^--(.*?)=(.*)` to match the first `=` symbol since `v0.7.2`.
 
 > Behavior changed to update existing uri before expansion and then update thereafter, this makes both features, i.e., command-line specifying expansion and assigning values after expansion, work. Since `v0.5.0`.
 

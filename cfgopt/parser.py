@@ -316,7 +316,7 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
 
     # use command line options to update json configs
     def command_line_update(_args):
-        updator_pattern = re.compile("^--(.*)=(.*)")
+        updator_pattern = re.compile("^--(.*?)=(.*)")
         unparsed_args = []
         for updator in _args:
             match_obj = updator_pattern.fullmatch(updator.replace("\n", ""))
