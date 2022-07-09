@@ -373,7 +373,6 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
             if _BSE in data:
                 base:Dict = deepcopy(parse_inheritance(data[_BSE], f"{uri}/{_BSE}"))
                 if not isinstance(base, abc.Mapping):
-                    breakpoint()
                     raise ConfigParseError(f"Unable to inherit the base object since it is not parsed as a dict. The base object is: {repr(base)}\nConfig origin: '{uri}/{_BSE}'")
                 data.pop(_BSE)
                 base.update(data)
