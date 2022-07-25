@@ -336,7 +336,7 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
                 try:
                     data = json.loads(data)
                 except json.JSONDecodeError as e:
-                    raise ConfigParseError(f"While parsing {data}, {e}.") from None
+                    raise ConfigParseError(f"Invalid JSON while parsing {data}, {e}.") from None
                 router[uri] = data  # this line updates root
         return unparsed_args
         
@@ -439,6 +439,12 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
     unparsed_args = command_line_update(unparsed_args)
     
     if len(unparsed_args):
+        
+        try:
+            router[args_root]
+        except:
+            raise ConfigParseError(f"args_root {args_root} not found")
+        
         unparsed_args_ = ', '.join(f"'{ua[:ua.find('=')+1]}...'" for ua in unparsed_args)
         
         raise ConfigParseError(
