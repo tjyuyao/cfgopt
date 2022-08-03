@@ -12,6 +12,10 @@ from typing import Any, Dict, Union
 from socket import gethostname
 from collections import abc
 
+from .utils import PARSE_ROOT
+
+HOSTNAME = gethostname()
+
 _AST = "__as_type__"
 _BSE = "__base__"
 _CLS = "__class__"
@@ -165,7 +169,7 @@ class ConfigContainer:
                 if k == _PRT:
                     out.pop()
                 elif k == _HST:
-                    out.append(gethostname())
+                    out.append(HOSTNAME)
                 elif k == "":
                     continue
                 else:
@@ -294,6 +298,9 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
     the `cfg://` block references."""
 
     if isinstance(cfg_root, str):
+
+        if PARSE_ROOT[0] is not None:
+            cfg_root = osp.join(PARSE_ROOT[0], cfg_root)
         if not osp.isdir(cfg_root):
             raise TypeError(f"`cfg_root` (\"{cfg_root}\") is not a directory.")
         # load raw data from json files
