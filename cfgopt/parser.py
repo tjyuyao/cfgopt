@@ -1,6 +1,7 @@
 import glob
 import importlib
 import json
+import os
 import os.path as osp
 import re
 import types
@@ -49,7 +50,12 @@ def _get_parameters(klass):
     return parameters
 
 def wrap(data):
-    return ConfigContainer(data) if isinstance(data, dict) else data
+    if isinstance(data, dict):
+        return ConfigContainer(data)
+    elif isinstance(data, list):
+        return [wrap(i) for i in data]
+    else:
+        return data
 
 def dewrap(data):
     if isinstance(data, ConfigContainer):
@@ -61,13 +67,42 @@ def dewrap(data):
     else:
         return data
     
-class ConfigContainer:
+class ConfigContainerIter:
+    
+    def __init__(self, cfg) -> None:
+        self.keys = list(cfg.keys())
+        self.i = 0
+        self.n = len(self.keys)
+        
+    def __next__(self):
+        if self.i >= self.n:
+            raise StopIteration
+        i = self.i
+        self.i += 1
+        return self.keys[i]
+        
+    
+class ConfigContainer(abc.Mapping):
     """This class stores a internal dict, and support 
     cfg:// format `__getitem__` and `__setitem__` method."""
 
     def __init__(self, data: Dict) -> None:
         self.data = data
         """stores the raw dict data."""
+    
+    def __len__(self) -> int:
+        return len(self.data)
+    
+    def __iter__(self):
+        return ConfigContainerIter(self)
+        
+    def keys(self):
+        if isinstance(self.data, dict):
+            return self.data.keys()
+        elif isinstance(self.data, list):
+            return range(len(self.data))
+        else:
+            raise NotImplementedError
     
     def items(self):
         if not isinstance(self.data, abc.Mapping):
@@ -114,10 +149,7 @@ class ConfigContainer:
                                   tb_lineno=back_frame.f_lineno)
             raise URINotFoundError(msg).with_traceback(back_tb) from None
 
-        if isinstance(item, (dict, list)):
-            return ConfigContainer(item)
-        else:
-            return item
+        return wrap(item)
     
     def __setitem__(self, uri:str, data:Any):
         keys = self._split_uri(uri)
@@ -308,11 +340,14 @@ def parse_configs(cfg_root:Union[str, Dict], args=None, args_root=None) -> Confi
         cfg_file_glob_pattern = osp.join(cfg_root, "**", "*.json")
         for cfg_file in glob.glob(cfg_file_glob_pattern, recursive=True):
             cfg_addr = osp.relpath(cfg_file, cfg_root)
-            with open(cfg_file) as _f:
-                try:
-                    cfg_data = json.load(_f)
-                except json.JSONDecodeError as e:
-                    raise ConfigParseError(f"While parsing {cfg_file}, {e}.") from None
+            if os.stat(cfg_file).st_size == 0: # empty (but existing) file
+                cfg_data = {}
+            else:
+                with open(cfg_file) as _f:
+                    try:
+                        cfg_data = json.load(_f)
+                    except json.JSONDecodeError as e:
+                        raise ConfigParseError(f"While parsing {cfg_file}, {e}.") from None
             root[cfg_addr] = cfg_data
     elif isinstance(cfg_root, dict):
         root = cfg_root
